@@ -15,8 +15,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Video Downloader API",
-    description="Download videos from YouTube, Facebook, Pinterest, and TikTok with quality and format selection",
+    title="Railway Video Downloader",
+    description="Download videos from YouTube, Facebook, Pinterest, and TikTok optimized for Railway deployment",
     version="1.0.0"
 )
 
@@ -52,7 +52,9 @@ class FormatInfo(BaseModel):
 @app.get("/")
 async def root():
     return {
-        "message": "Video Downloader API",
+        "service": "Railway Video Downloader",
+        "platform": "railway.app",
+        "status": "running",
         "endpoints": {
             "/download": "POST - Download video/audio",
             "/info": "GET - Get video information",
@@ -64,7 +66,7 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "video-downloader"}
+    return {"status": "healthy", "platform": "railway"}
 
 
 def get_quality_filter(quality: str) -> str:
@@ -356,6 +358,6 @@ async def cleanup_downloads():
 
 if __name__ == "__main__":
     import uvicorn
-    # Railway sets PORT environment variable, default to 8080 for other platforms
+    # Railway sets PORT environment variable
     port = int(os.getenv("PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
