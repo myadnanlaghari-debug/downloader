@@ -1,14 +1,14 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, HttpUrl
-from typing import Optional, List
+from pydantic import BaseModel
+from typing import Optional
 import yt_dlp
 import os
 import uuid
-import shutil
 from pathlib import Path
 import logging
+import io
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -20,7 +20,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for all origins (configure appropriately for production)
+# Enable CORS for all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -90,15 +90,18 @@ def download_video(url: str, output_path: str, format_type: str, quality: str) -
     """Download video using yt-dlp"""
     
     ydl_opts = {
-        'outtmpl': output_path,
+        'outtmpl': output_path + '.%(ext)s',
         'quiet': True,
         'no_warnings': True,
         'extract_flat': False,
+        'ignoreerrors': False,
+        'retries': 3,
+        'fragment_retries': 3,
     }
     
     if format_type == "mp3":
         ydl_opts.update({
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
                 'preferredcodec': 'mp3',
@@ -110,6 +113,7 @@ def download_video(url: str, output_path: str, format_type: str, quality: str) -
         ydl_opts.update({
             'format': quality_filter,
             'merge_output_format': 'mp4',
+            'prefer_ffmpeg': True,
         })
     
     try:
@@ -118,12 +122,22 @@ def download_video(url: str, output_path: str, format_type: str, quality: str) -
             
             # Get the actual downloaded file path
             if format_type == "mp3":
-                downloaded_file = output_path.rsplit('.', 1)[0] + '.mp3'
+                downloaded_file = output_path + '.mp3'
             else:
-                downloaded_file = ydl.prepare_filename(info)
-                # Handle merged files
-                if not os.path.exists(downloaded_file):
-                    downloaded_file = output_path.rsplit('.', 1)[0] + '.mp4'
+                # Try multiple possible extensions
+                for ext in ['.mp4', '.mkv', '.webm']:
+                    downloaded_file = output_path + ext
+                    if os.path.exists(downloaded_file):
+                        break
+                else:
+                    downloaded_file = output_path + '.mp4'
+            
+            if not os.path.exists(downloaded_file):
+                # Fallback: search for any file with the unique_id
+                for f in DOWNLOAD_DIR.glob(f"{output_path.split('/')[-1]}*"):
+                    if f.suffix in ['.mp4', '.mkv', '.webm', '.mp3']:
+                        downloaded_file = str(f)
+                        break
             
             return {
                 "success": True,
@@ -141,9 +155,10 @@ def download_video(url: str, output_path: str, format_type: str, quality: str) -
 @app.post("/download")
 async def download_endpoint(request: DownloadRequest, background_tasks: BackgroundTasks):
     """
-    Download video/audio from supported platforms
+    Download video/audio from supported platforms and return the file
     
     Supported platforms: YouTube, Facebook, Pinterest, TikTok
+    Returns the actual video/audio file for download
     """
     try:
         # Validate URL
@@ -178,9 +193,14 @@ async def download_endpoint(request: DownloadRequest, background_tasks: Backgrou
         safe_title = "".join(c for c in result["title"] if c.isalnum() or c in " -_").strip()[:50]
         filename = f"{safe_title}{ext}"
         
-        # Schedule cleanup after response
+        # Get file size
+        file_size = os.path.getsize(downloaded_file)
+        
+        # Schedule cleanup after response is sent
         def cleanup():
             try:
+                import time
+                time.sleep(2)  # Wait a bit to ensure file is fully sent
                 if os.path.exists(downloaded_file):
                     os.remove(downloaded_file)
                 # Clean up any related files
@@ -192,19 +212,24 @@ async def download_endpoint(request: DownloadRequest, background_tasks: Backgrou
         
         background_tasks.add_task(cleanup)
         
-        return {
-            "success": True,
-            "message": "Download successful",
-            "data": {
-                "title": result["title"],
-                "duration": result["duration"],
-                "thumbnail": result["thumbnail"],
-                "uploader": result["uploader"],
-                "format": request.format,
-                "quality": request.quality,
-                "filename": filename
+        # Return the actual file as a streaming response
+        def iterfile():
+            with open(downloaded_file, mode="rb") as file_like:
+                yield from file_like
+        
+        media_type = "audio/mpeg" if request.format == "mp3" else "video/mp4"
+        
+        return StreamingResponse(
+            iterfile(),
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Title": result["title"],
+                "X-Duration": str(result["duration"]),
+                "X-Uploader": result["uploader"],
+                "X-File-Size": str(file_size)
             }
-        }
+        )
         
     except HTTPException:
         raise
@@ -232,11 +257,14 @@ async def get_video_info(url: str):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
+            if not info:
+                raise HTTPException(status_code=404, detail="Video information not found")
+            
             return {
                 "success": True,
                 "data": {
                     "title": info.get('title', 'Unknown'),
-                    "description": info.get('description', '')[:500],
+                    "description": (info.get('description') or '')[:500],
                     "duration": info.get('duration', 0),
                     "thumbnail": info.get('thumbnail', ''),
                     "uploader": info.get('uploader', 'Unknown'),
@@ -274,20 +302,24 @@ async def get_available_formats(url: str):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             
+            if not info:
+                raise HTTPException(status_code=404, detail="Video information not found")
+            
             formats = []
             for fmt in info.get('formats', []):
-                formats.append({
-                    "format_id": fmt.get('format_id', ''),
-                    "resolution": fmt.get('resolution', fmt.get('height', 'N/A')),
-                    "filesize": fmt.get('filesize'),
-                    "vcodec": fmt.get('vcodec', 'none'),
-                    "acodec": fmt.get('acodec', 'none'),
-                    "ext": fmt.get('ext', ''),
-                    "quality": fmt.get('quality', 0)
-                })
+                if fmt:
+                    formats.append({
+                        "format_id": fmt.get('format_id', ''),
+                        "resolution": fmt.get('resolution', str(fmt.get('height', 'N/A'))),
+                        "filesize": fmt.get('filesize'),
+                        "vcodec": fmt.get('vcodec', 'none'),
+                        "acodec": fmt.get('acodec', 'none'),
+                        "ext": fmt.get('ext', ''),
+                        "quality": fmt.get('quality', 0)
+                    })
             
-            # Sort by quality
-            formats.sort(key=lambda x: x.get('quality', 0), reverse=True)
+            # Sort by quality (handle None values)
+            formats.sort(key=lambda x: (x.get('quality') or 0), reverse=True)
             
             return {
                 "success": True,
@@ -324,4 +356,6 @@ async def cleanup_downloads():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
+    # Railway sets PORT environment variable, default to 8080 for other platforms
+    port = int(os.getenv("PORT", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
