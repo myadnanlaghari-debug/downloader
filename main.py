@@ -1,0 +1,327 @@
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, HttpUrl
+from typing import Optional, List
+import yt_dlp
+import os
+import uuid
+import shutil
+from pathlib import Path
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Video Downloader API",
+    description="Download videos from YouTube, Facebook, Pinterest, and TikTok with quality and format selection",
+    version="1.0.0"
+)
+
+# Enable CORS for all origins (configure appropriately for production)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Create temp directory for downloads
+DOWNLOAD_DIR = Path("downloads")
+DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+
+class DownloadRequest(BaseModel):
+    url: str
+    format: str = "mp4"  # mp4 or mp3
+    quality: Optional[str] = "best"  # best, worst, 1080p, 720p, etc.
+
+
+class FormatInfo(BaseModel):
+    format_id: str
+    resolution: str
+    filesize: Optional[int]
+    vcodec: str
+    acodec: str
+    ext: str
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Video Downloader API",
+        "endpoints": {
+            "/download": "POST - Download video/audio",
+            "/info": "GET - Get video information",
+            "/formats": "GET - Get available formats",
+            "/health": "GET - Health check"
+        }
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "video-downloader"}
+
+
+def get_quality_filter(quality: str) -> str:
+    """Convert quality string to yt-dlp format filter"""
+    if quality == "best":
+        return "bestvideo+bestaudio/best"
+    elif quality == "worst":
+        return "worstvideo+worstaudio/worst"
+    elif quality.endswith("p"):
+        # e.g., 1080p, 720p
+        height = quality[:-1]
+        return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+    elif quality.endswith("k"):
+        # e.g., 4k, 2k
+        height_map = {"4k": "2160", "2k": "1440"}
+        height = height_map.get(quality.lower(), "1080")
+        return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+    else:
+        return "bestvideo+bestaudio/best"
+
+
+def download_video(url: str, output_path: str, format_type: str, quality: str) -> dict:
+    """Download video using yt-dlp"""
+    
+    ydl_opts = {
+        'outtmpl': output_path,
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': False,
+    }
+    
+    if format_type == "mp3":
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        })
+    else:  # mp4
+        quality_filter = get_quality_filter(quality)
+        ydl_opts.update({
+            'format': quality_filter,
+            'merge_output_format': 'mp4',
+        })
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            
+            # Get the actual downloaded file path
+            if format_type == "mp3":
+                downloaded_file = output_path.rsplit('.', 1)[0] + '.mp3'
+            else:
+                downloaded_file = ydl.prepare_filename(info)
+                # Handle merged files
+                if not os.path.exists(downloaded_file):
+                    downloaded_file = output_path.rsplit('.', 1)[0] + '.mp4'
+            
+            return {
+                "success": True,
+                "file_path": downloaded_file,
+                "title": info.get('title', 'Unknown'),
+                "duration": info.get('duration', 0),
+                "thumbnail": info.get('thumbnail', ''),
+                "uploader": info.get('uploader', 'Unknown')
+            }
+    except Exception as e:
+        logger.error(f"Download error: {str(e)}")
+        raise Exception(f"Download failed: {str(e)}")
+
+
+@app.post("/download")
+async def download_endpoint(request: DownloadRequest, background_tasks: BackgroundTasks):
+    """
+    Download video/audio from supported platforms
+    
+    Supported platforms: YouTube, Facebook, Pinterest, TikTok
+    """
+    try:
+        # Validate URL
+        if not request.url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        # Validate format
+        if request.format not in ["mp4", "mp3"]:
+            raise HTTPException(status_code=400, detail="Format must be 'mp4' or 'mp3'")
+        
+        # Generate unique filename
+        unique_id = str(uuid.uuid4())
+        output_template = str(DOWNLOAD_DIR / f"{unique_id}")
+        
+        # Download the video
+        logger.info(f"Starting download: {request.url}, format: {request.format}, quality: {request.quality}")
+        
+        result = download_video(
+            url=request.url,
+            output_path=output_template,
+            format_type=request.format,
+            quality=request.quality
+        )
+        
+        downloaded_file = result["file_path"]
+        
+        if not os.path.exists(downloaded_file):
+            raise HTTPException(status_code=500, detail="File was not created")
+        
+        # Determine filename for download
+        ext = ".mp3" if request.format == "mp3" else ".mp4"
+        safe_title = "".join(c for c in result["title"] if c.isalnum() or c in " -_").strip()[:50]
+        filename = f"{safe_title}{ext}"
+        
+        # Schedule cleanup after response
+        def cleanup():
+            try:
+                if os.path.exists(downloaded_file):
+                    os.remove(downloaded_file)
+                # Clean up any related files
+                for f in DOWNLOAD_DIR.glob(f"{unique_id}*"):
+                    if os.path.exists(f):
+                        os.remove(f)
+            except Exception as e:
+                logger.error(f"Cleanup error: {e}")
+        
+        background_tasks.add_task(cleanup)
+        
+        return {
+            "success": True,
+            "message": "Download successful",
+            "data": {
+                "title": result["title"],
+                "duration": result["duration"],
+                "thumbnail": result["thumbnail"],
+                "uploader": result["uploader"],
+                "format": request.format,
+                "quality": request.quality,
+                "filename": filename
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Download endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/info")
+async def get_video_info(url: str):
+    """
+    Get video information without downloading
+    """
+    try:
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'format': 'best',
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            return {
+                "success": True,
+                "data": {
+                    "title": info.get('title', 'Unknown'),
+                    "description": info.get('description', '')[:500],
+                    "duration": info.get('duration', 0),
+                    "thumbnail": info.get('thumbnail', ''),
+                    "uploader": info.get('uploader', 'Unknown'),
+                    "upload_date": info.get('upload_date', ''),
+                    "view_count": info.get('view_count', 0),
+                    "like_count": info.get('like_count', 0),
+                    "platform": info.get('extractor', 'Unknown'),
+                    "url": info.get('webpage_url', url)
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Info endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/formats")
+async def get_available_formats(url: str):
+    """
+    Get available video/audio formats for a URL
+    """
+    try:
+        if not url:
+            raise HTTPException(status_code=400, detail="URL is required")
+        
+        ydl_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': False,
+            'format': 'best',
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            
+            formats = []
+            for fmt in info.get('formats', []):
+                formats.append({
+                    "format_id": fmt.get('format_id', ''),
+                    "resolution": fmt.get('resolution', fmt.get('height', 'N/A')),
+                    "filesize": fmt.get('filesize'),
+                    "vcodec": fmt.get('vcodec', 'none'),
+                    "acodec": fmt.get('acodec', 'none'),
+                    "ext": fmt.get('ext', ''),
+                    "quality": fmt.get('quality', 0)
+                })
+            
+            # Sort by quality
+            formats.sort(key=lambda x: x.get('quality', 0), reverse=True)
+            
+            return {
+                "success": True,
+                "data": {
+                    "title": info.get('title', 'Unknown'),
+                    "formats": formats[:20],  # Limit to top 20 formats
+                    "recommended_qualities": ["best", "1080p", "720p", "480p", "360p"]
+                }
+            }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Formats endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/cleanup")
+async def cleanup_downloads():
+    """Manual cleanup of download directory"""
+    try:
+        count = 0
+        for file in DOWNLOAD_DIR.glob("*"):
+            try:
+                file.unlink()
+                count += 1
+            except Exception as e:
+                logger.error(f"Error deleting {file}: {e}")
+        
+        return {"success": True, "message": f"Cleaned up {count} files"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
