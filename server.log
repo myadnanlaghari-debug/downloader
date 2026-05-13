@@ -1,0 +1,21 @@
+INFO:     Started server process [1705]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     127.0.0.1:49612 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49614 - "GET /docs HTTP/1.1" 200 OK
+ERROR: [dailymotion] x4d9qby: Not found.
+ERROR:__main__:Info endpoint error: ERROR: [dailymotion] x4d9qby: Not found.
+INFO:     127.0.0.1:49616 - "GET /info?url=https://www.dailymotion.com/video/x4d9qby HTTP/1.1" 500 Internal Server Error
+ERROR: [dailymotion] x2p6k4e: Not found.
+ERROR:__main__:Info endpoint error: ERROR: [dailymotion] x2p6k4e: Not found.
+INFO:     127.0.0.1:49620 - "GET /info?url=https://www.dailymotion.com/video/x2p6k4e HTTP/1.1" 500 Internal Server Error
+ERROR: [dailymotion] x1ndbtt: Not found.
+ERROR:__main__:Info endpoint error: ERROR: [dailymotion] x1ndbtt: Not found.
+INFO:     127.0.0.1:49624 - "GET /info?url=https://www.dailymotion.com/video/x1ndbtt HTTP/1.1" 500 Internal Server Error
+ERROR: [dailymotion] x2yynzs: No video formats found!; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+ERROR:__main__:Info endpoint error: ERROR: [dailymotion] x2yynzs: No video formats found!; please report this issue on  https://github.com/yt-dlp/yt-dlp/issues?q= , filling out the appropriate issue template. Confirm you are on the latest version using  yt-dlp -U
+INFO:     127.0.0.1:49628 - "GET /info?url=https://www.dailymotion.com/video/x2yynzs HTTP/1.1" 500 Internal Server Error
+ERROR: [dailymotion] x2a69jd: Not found.
+ERROR:__main__:Info endpoint error: ERROR: [dailymotion] x2a69jd: Not found.
+INFO:     127.0.0.1:49636 - "GET /info?url=https://www.dailymotion.com/video/x2a69jd HTTP/1.1" 500 Internal Server Error

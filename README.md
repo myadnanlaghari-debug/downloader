@@ -1,6 +1,6 @@
-# Video Downloader API
+# Railway Video Downloader API
 
-A powerful FastAPI-based video downloader supporting YouTube, Facebook, Pinterest, TikTok, and more. Built with `yt-dlp` for reliable video extraction.
+A powerful FastAPI-based video downloader optimized for Railway deployment. Supports YouTube, Facebook, Pinterest, TikTok, and more. Built with `yt-dlp` for reliable video extraction.
 
 ## Features
 
@@ -62,7 +62,7 @@ Get video information without downloading.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/info?url=https://youtube.com/watch?v=VIDEO_ID"
+curl "https://your-project.railway.app/info?url=https://youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### `GET /formats`
@@ -73,7 +73,7 @@ Get available video/audio formats for a URL.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/formats?url=https://youtube.com/watch?v=VIDEO_ID"
+curl "https://your-project.railway.app/formats?url=https://youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### `DELETE /cleanup`
@@ -127,24 +127,23 @@ Manually cleanup downloaded files.
    ```
 
 4. **Access the API:**
-   - API Root: http://localhost:8000
-   - Health Check: http://localhost:8000/health
-   - Interactive Docs: http://localhost:8000/docs
-   - Alternative Docs: http://localhost:8000/redoc
+   - API Root: https://your-project.railway.app
+   - Health Check: https://your-project.railway.app/health
+   - Interactive Docs: https://your-project.railway.app/docs
+   - Alternative Docs: https://your-project.railway.app/redoc
 
 ## Deployment on Railway
 
-### Option 1: Deploy from GitHub
+### Deploy from GitHub (Recommended)
 
 1. Push your code to GitHub
 2. Go to [railway.app](https://railway.app)
 3. Click "New Project" → "Deploy from GitHub repo"
 4. Select your repository
-5. Railway will automatically detect the Python project
-6. Add environment variables if needed
-7. Click "Deploy"
+5. Railway will automatically detect the Python project and deploy
+6. Your app will be available at `https://your-project.railway.app`
 
-### Option 2: Deploy with Railway CLI
+### Deploy with Railway CLI
 
 1. **Install Railway CLI:**
    ```bash
@@ -164,17 +163,17 @@ Manually cleanup downloaded files.
 
 ### Railway Configuration
 
-The app includes:
-- `Procfile` - Defines the web process for Railway
-- `requirements.txt` - Python dependencies
+The app is pre-configured for Railway:
+- `Procfile` - Defines the web process
+- `requirements.txt` - Python dependencies  
 - Automatic port detection via `$PORT` environment variable
+- Optimized for Railway's infrastructure
 
 No additional configuration needed!
 
-### Environment Variables (Optional)
+### Environment Variables
 
-- `PORT` - Automatically set by Railway
-- `LOG_LEVEL` - Set logging level (default: INFO)
+- `PORT` - Automatically set by Railway (no configuration needed)
 
 ## Usage Examples
 
@@ -182,33 +181,33 @@ No additional configuration needed!
 
 **Download MP4 video (best quality):**
 ```bash
-curl -X POST "http://localhost:8000/download" \
+curl -X POST "https://your-project.railway.app/download" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://youtube.com/watch?v=VIDEO_ID", "format": "mp4", "quality": "best"}'
 ```
 
 **Download MP3 audio:**
 ```bash
-curl -X POST "http://localhost:8000/download" \
+curl -X POST "https://your-project.railway.app/download" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://youtube.com/watch?v=VIDEO_ID", "format": "mp3"}'
 ```
 
 **Download 720p video:**
 ```bash
-curl -X POST "http://localhost:8000/download" \
+curl -X POST "https://your-project.railway.app/download" \
   -H "Content-Type: application/json" \
   -d '{"url": "https://youtube.com/watch?v=VIDEO_ID", "format": "mp4", "quality": "720p"}'
 ```
 
 **Get video info:**
 ```bash
-curl "http://localhost:8000/info?url=https://youtube.com/watch?v=VIDEO_ID"
+curl "https://your-project.railway.app/info?url=https://youtube.com/watch?v=VIDEO_ID"
 ```
 
 **List available formats:**
 ```bash
-curl "http://localhost:8000/formats?url=https://youtube.com/watch?v=VIDEO_ID"
+curl "https://your-project.railway.app/formats?url=https://youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Using Python
@@ -218,7 +217,7 @@ import requests
 
 # Download video
 response = requests.post(
-    "http://localhost:8000/download",
+    "https://your-project.railway.app/download",
     json={
         "url": "https://youtube.com/watch?v=VIDEO_ID",
         "format": "mp4",
@@ -229,7 +228,7 @@ print(response.json())
 
 # Get video info
 response = requests.get(
-    "http://localhost:8000/info",
+    "https://your-project.railway.app/info",
     params={"url": "https://youtube.com/watch?v=VIDEO_ID"}
 )
 print(response.json())
@@ -239,7 +238,7 @@ print(response.json())
 
 ```javascript
 // Download video
-const response = await fetch('http://localhost:8000/download', {
+const response = await fetch('https://your-project.railway.app/download', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
