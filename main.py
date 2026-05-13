@@ -102,15 +102,34 @@ def get_quality_filter(quality: str) -> str:
 def download_video(url: str, output_path: str, format_type: str, quality: str) -> dict:
     """Download video using yt-dlp"""
     
-    ydl_opts = {
+    # Common options for all downloads
+    common_opts = {
         'outtmpl': output_path + '.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False,
+        'no_warnings': False,
         'extract_flat': False,
         'ignoreerrors': False,
         'retries': 3,
         'fragment_retries': 3,
+        # Add user-agent and headers to avoid blocking
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        },
+        # Extractor arguments for specific platforms - bypass bot detection
+        'extractor_args': {
+            'facebook': {
+                'prefer_embedded': ['True'],
+            },
+            'youtube': {
+                'player_client': ['web', 'android'],
+                'skip': ['hls', 'dash'],
+            },
+        },
     }
+    
+    ydl_opts = common_opts.copy()
     
     if format_type == "mp3":
         ydl_opts.update({
@@ -265,6 +284,16 @@ async def get_video_info(url: str):
             'no_warnings': True,
             'extract_flat': False,
             'format': 'best',
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+            },
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['web', 'android'],
+                },
+            },
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:

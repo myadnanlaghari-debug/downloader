@@ -366,22 +366,51 @@
         
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner"></span> Preparing Download...';
+        showStatus('Starting download...', 'loading');
 
         try {
-            // We use a direct link approach or blob fetch
-            // Since our API returns a FileResponse, we can fetch as blob and trigger download
-            const downloadUrl = `${apiBase}/download?url=${encodeURIComponent(url)}&format=${format}&quality=${quality}`;
+            // Use POST request with JSON body as expected by the API
+            const response = await fetch(`${apiBase}/download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url, format: format, quality: quality })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `Download failed with status ${response.status}`);
+            }
+
+            // Get the file as a blob and trigger download
+            const blob = await response.blob();
             
-            // Create a temporary link to trigger browser download behavior
-            // Note: For large files, fetch() might consume too much memory. 
-            // Window.location is safer for direct streaming from backend.
-            window.location.href = downloadUrl;
-            
+            // Get filename from headers or generate one
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'download.' + format;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+                if (filenameMatch && filenameMatch[1]) {
+                    filename = filenameMatch[1];
+                }
+            }
+
+            // Create download link
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(downloadUrl);
+
+            btn.disabled = false;
+            btn.innerHTML = 'Download Complete!';
+            showStatus('Download started successfully!', 'loading');
             setTimeout(() => {
-                btn.disabled = false;
-                btn.innerHTML = 'Download Started';
-                setTimeout(() => btn.innerHTML = 'Download Now', 2000);
-            }, 1000);
+                btn.innerHTML = 'Download Now';
+                showStatus('', 'none');
+            }, 3000);
 
         } catch (error) {
             showStatus('Download failed: ' + error.message, 'error');
