@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Railway Video Downloader</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --success: #10b981;
+            --error: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background: var(--card-bg);
+            width: 100%;
+            max-width: 500px;
+            padding: 2rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+            font-size: 1.8rem;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: var(--text-light);
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .btn-primary:disabled {
+            background-color: var(--text-light);
+            cursor: not-allowed;
+        }
+
+        .options-panel {
+            display: none;
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border);
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .video-info {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 1.5rem;
+            align-items: center;
+        }
+
+        .thumbnail {
+            width: 120px;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 8px;
+            background-color: var(--border);
+        }
+
+        .video-details {
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .video-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 5px;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .video-duration {
+            font-size: 0.8rem;
+            color: var(--text-light);
+        }
+
+        .select-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            background-color: white;
+            font-size: 0.95rem;
+        }
+
+        .status-msg {
+            margin-top: 1rem;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            text-align: center;
+            display: none;
+        }
+
+        .status-error {
+            background-color: #fef2f2;
+            color: var(--error);
+            border: 1px solid #fecaca;
+        }
+
+        .status-loading {
+            background-color: #eff6ff;
+            color: var(--primary);
+            border: 1px solid #bfdbfe;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Video Downloader</h1>
+    <p class="subtitle">Supports YouTube, Facebook, TikTok, Pinterest & more</p>
+
+    <div class="input-group">
+        <label for="urlInput">Video URL</label>
+        <input type="text" id="urlInput" placeholder="Paste link here (e.g., https://youtube.com/...)" autocomplete="off">
+    </div>
+
+    <button id="fetchBtn" class="btn btn-primary" onclick="fetchVideoInfo()">
+        Get Video Info
+    </button>
+
+    <div id="statusMsg" class="status-msg"></div>
+
+    <div id="optionsPanel" class="options-panel">
+        <div class="video-info">
+            <img id="thumbImg" class="thumbnail" src="" alt="Thumbnail">
+            <div class="video-details">
+                <div id="videoTitle" class="video-title"></div>
+                <div id="videoDuration" class="video-duration"></div>
+            </div>
+        </div>
+
+        <div class="select-group">
+            <div>
+                <label for="formatSelect">Format</label>
+                <select id="formatSelect" onchange="updateQualities()">
+                    <option value="mp4">MP4 (Video)</option>
+                    <option value="mp3">MP3 (Audio)</option>
+                </select>
+            </div>
+            <div>
+                <label for="qualitySelect">Quality</label>
+                <select id="qualitySelect">
+                    <!-- Populated dynamically -->
+                </select>
+            </div>
+        </div>
+
+        <button id="downloadBtn" class="btn btn-primary" onclick="downloadVideo()">
+            Download Now
+        </button>
+    </div>
+</div>
+
+<script>
+    let currentFormats = [];
+    const apiBase = ''; // Relative path since served by same origin
+
+    async function fetchVideoInfo() {
+        const url = document.getElementById('urlInput').value.trim();
+        const btn = document.getElementById('fetchBtn');
+        const status = document.getElementById('statusMsg');
+        const panel = document.getElementById('optionsPanel');
+
+        if (!url) {
+            showStatus('Please enter a valid URL', 'error');
+            return;
+        }
+
+        // Reset UI
+        panel.style.display = 'none';
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Processing...';
+        showStatus('', 'loading');
+
+        try {
+            const response = await fetch(`${apiBase}/formats`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: url })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.detail || 'Failed to fetch video info');
+            }
+
+            currentFormats = data.formats || [];
+            
+            // Update UI with info
+            document.getElementById('videoTitle').textContent = data.title || 'Unknown Title';
+            document.getElementById('videoDuration').textContent = data.duration ? `${Math.floor(data.duration / 60)}:${String(data.duration % 60).padStart(2, '0')}` : '';
+            
+            // Handle thumbnail (try to get from data or generate generic)
+            const thumb = document.getElementById('thumbImg');
+            if (data.thumbnail) {
+                thumb.src = data.thumbnail;
+                thumb.style.display = 'block';
+            } else {
+                thumb.style.display = 'none';
+            }
+
+            updateQualities();
+            panel.style.display = 'block';
+            showStatus('', 'none');
+
+        } catch (error) {
+            showStatus(error.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Get Video Info';
+        }
+    }
+
+    function updateQualities() {
+        const format = document.getElementById('formatSelect').value;
+        const qualitySelect = document.getElementById('qualitySelect');
+        qualitySelect.innerHTML = '';
+
+        // Filter formats based on selection
+        let availableOptions = [];
+
+        if (format === 'mp3') {
+            availableOptions = ['best', '192k', '128k'];
+        } else {
+            // Extract unique heights from formats that have video
+            const heights = new Set();
+            currentFormats.forEach(f => {
+                if (f.vcodec !== 'none' && f.height) {
+                    heights.add(f.height);
+                }
+            });
+            
+            // Sort descending
+            const sortedHeights = Array.from(heights).sort((a, b) => b - a);
+            
+            if (sortedHeights.length > 0) {
+                availableOptions = ['best', ...sortedHeights];
+            } else {
+                availableOptions = ['best', '1080', '720', '480', '360'];
+            }
+        }
+
+        availableOptions.forEach(opt => {
+            const option = document.createElement('option');
+            option.value = opt;
+            option.textContent = opt === 'best' ? 'Best Available' : (format === 'mp3' ? `${opt} Audio` : `${opt}p`);
+            qualitySelect.appendChild(option);
+        });
+    }
+
+    async function downloadVideo() {
+        const url = document.getElementById('urlInput').value.trim();
+        const format = document.getElementById('formatSelect').value;
+        const quality = document.getElementById('qualitySelect').value;
+        const btn = document.getElementById('downloadBtn');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Preparing Download...';
+
+        try {
+            // We use a direct link approach or blob fetch
+            // Since our API returns a FileResponse, we can fetch as blob and trigger download
+            const downloadUrl = `${apiBase}/download?url=${encodeURIComponent(url)}&format=${format}&quality=${quality}`;
+            
+            // Create a temporary link to trigger browser download behavior
+            // Note: For large files, fetch() might consume too much memory. 
+            // Window.location is safer for direct streaming from backend.
+            window.location.href = downloadUrl;
+            
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = 'Download Started';
+                setTimeout(() => btn.innerHTML = 'Download Now', 2000);
+            }, 1000);
+
+        } catch (error) {
+            showStatus('Download failed: ' + error.message, 'error');
+            btn.disabled = false;
+            btn.innerHTML = 'Try Again';
+        }
+    }
+
+    function showStatus(msg, type) {
+        const el = document.getElementById('statusMsg');
+        if (type === 'none') {
+            el.style.display = 'none';
+            return;
+        }
+        el.textContent = msg;
+        el.className = 'status-msg ' + (type === 'error' ? 'status-error' : 'status-loading');
+        el.style.display = 'block';
+    }
+</script>
+
+</body>
+</html>

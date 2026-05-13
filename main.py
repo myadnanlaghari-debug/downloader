@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Response
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Response, Request
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from typing import Optional
 import yt_dlp
@@ -29,6 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Setup templates
+templates = Jinja2Templates(directory="templates")
+
 # Create temp directory for downloads
 DOWNLOAD_DIR = Path("downloads")
 DOWNLOAD_DIR.mkdir(exist_ok=True)
@@ -50,7 +54,14 @@ class FormatInfo(BaseModel):
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
+    """Serve the frontend HTML interface"""
+    return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/api-info")
+async def api_info():
+    """API information endpoint"""
     return {
         "service": "Railway Video Downloader",
         "platform": "railway.app",
@@ -58,7 +69,7 @@ async def root():
         "endpoints": {
             "/download": "POST - Download video/audio",
             "/info": "GET - Get video information",
-            "/formats": "GET - Get available formats",
+            "/formats": "POST - Get available formats",
             "/health": "GET - Health check"
         }
     }
@@ -72,20 +83,20 @@ async def health_check():
 def get_quality_filter(quality: str) -> str:
     """Convert quality string to yt-dlp format filter"""
     if quality == "best":
-        return "bestvideo+bestaudio/best"
+        return "bestvideo[ext!=webm]+bestaudio/best"
     elif quality == "worst":
         return "worstvideo+worstaudio/worst"
     elif quality.endswith("p"):
         # e.g., 1080p, 720p
         height = quality[:-1]
-        return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+        return f"bestvideo[height<={height}][ext!=webm]+bestaudio/best[height<={height}]"
     elif quality.endswith("k"):
         # e.g., 4k, 2k
         height_map = {"4k": "2160", "2k": "1440"}
         height = height_map.get(quality.lower(), "1080")
-        return f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+        return f"bestvideo[height<={height}][ext!=webm]+bestaudio/best[height<={height}]"
     else:
-        return "bestvideo+bestaudio/best"
+        return "bestvideo[ext!=webm]+bestaudio/best"
 
 
 def download_video(url: str, output_path: str, format_type: str, quality: str) -> dict:
@@ -285,13 +296,13 @@ async def get_video_info(url: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/formats")
-async def get_available_formats(url: str):
+@app.post("/formats")
+async def get_available_formats(request: DownloadRequest):
     """
     Get available video/audio formats for a URL
     """
     try:
-        if not url:
+        if not request.url:
             raise HTTPException(status_code=400, detail="URL is required")
         
         ydl_opts = {
@@ -302,7 +313,7 @@ async def get_available_formats(url: str):
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(request.url, download=False)
             
             if not info:
                 raise HTTPException(status_code=404, detail="Video information not found")
@@ -317,7 +328,8 @@ async def get_available_formats(url: str):
                         "vcodec": fmt.get('vcodec', 'none'),
                         "acodec": fmt.get('acodec', 'none'),
                         "ext": fmt.get('ext', ''),
-                        "quality": fmt.get('quality', 0)
+                        "quality": fmt.get('quality', 0),
+                        "height": fmt.get('height')
                     })
             
             # Sort by quality (handle None values)
@@ -325,11 +337,12 @@ async def get_available_formats(url: str):
             
             return {
                 "success": True,
-                "data": {
-                    "title": info.get('title', 'Unknown'),
-                    "formats": formats[:20],  # Limit to top 20 formats
-                    "recommended_qualities": ["best", "1080p", "720p", "480p", "360p"]
-                }
+                "title": info.get('title', 'Unknown'),
+                "duration": info.get('duration', 0),
+                "thumbnail": info.get('thumbnail', ''),
+                "uploader": info.get('uploader', 'Unknown'),
+                "formats": formats[:30],  # Limit to top 30 formats
+                "recommended_qualities": ["best", "1080p", "720p", "480p", "360p"]
             }
     
     except HTTPException:
